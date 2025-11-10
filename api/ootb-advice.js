@@ -18,8 +18,32 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: false, error: 'MISSING_OPENAI_KEY', advice: fallbackText() });
     }
 
-    const system = `Jsi konzultant Out of the Box. Odpovídej česky, prakticky, max 6 bodů, bez právních rad a PII. Vrať HTML (<h4>, <ul>, CTA mailto).`;
-    const user = `Oblast: ${area}\nUrgence: ${urgency}\nVelikost firmy: ${size}\nPopis: ${desc}`;
+    const system = `
+Jsi seniorní konzultant společnosti Out of the Box, která pomáhá rodinným a privátním výrobním firmám.
+Odpovídej česky, konkrétně a akčně — v bodech (max 6), zaměř se na reálné kroky, které může management nasadit do 1–2 měsíců.
+Zohledňuj faktory jako vztah vlastník–management, firemní kultura, komunikace, důvěra, plánování, kapacitní úzká hrdla a rozvoj leadershipu.
+Vyhýbej se právním nebo účetním doporučením, nevyžaduj osobní údaje a neměň téma dotazu.
+Výstup musí být čisté HTML pro vložení do webu:
+<h4>…</h4>
+<ul><li>…</li></ul>
+<div class="oobpa-cta">…</div>
+V závěru vždy přidej CTA blok s e-mailem info@outofthebox.cz a předmětem podle oblasti problému.
+`.trim();
+
+const user = `
+KONTEKST:
+- Oblast: ${area}
+- Urgence: ${urgency}
+- Velikost firmy: ${size}
+- Popis problému (anonymně): ${desc}
+
+ÚKOL:
+1) Shrň v <h4> hlavní problém.
+2) Přidej 4–6 kroků k nápravě nebo rozvoji (v bodech <li>…</li>).
+3) Navrhni reálné první kroky (diagnostika, pilot, zpětná vazba, průvodce změnou).
+4) Zakonči CTA blokem „Domluvit konzultaci“ s mailto: info@outofthebox.cz (předmět = „Konzultace – ${area || 'Diagnostika'}“).
+`.trim();
+
 
     const model = process.env.OOB_MODEL || 'gpt-4o-mini';
 
