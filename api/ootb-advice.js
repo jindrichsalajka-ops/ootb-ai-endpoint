@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
-  // CORS – můžeš zpřísnit na konkrétní doménu tvého webu
+  // CORS
   const origin = req.headers.origin || '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -13,17 +13,13 @@ export default async function handler(req, res) {
     const { area, urgency, size, description } = req.body || {};
     const desc = String(description || '').slice(0, 2000);
 
-    const system = `
-Jsi seniorní konzultant Out of the Box. Odpovídej česky, prakticky, v bodech (max 6), bez právních rad a bez osobních údajů.
-Vrať jednoduché HTML: <h4>…</h4><ul>…</ul><div class="oobpa-cta">…</div> s tlačítkem "Domluvit konzultaci" (mailto:info@outofthebox.cz).
-`.trim();
+    // 1) chybějící klíč
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(200).json({ ok: false, error: 'MISSING_OPENAI_KEY', advice: fallbackText() });
+    }
 
-    const user = `
-Oblast: ${area}
-Urgence: ${urgency}
-Velikost firmy: ${size}
-Popis (anonymně): ${desc}
-`.trim();
+    const system = `Jsi konzultant Out of the Box. Odpovídej česky, prakticky, max 6 bodů, bez právních rad a PII. Vrať HTML (<h4>, <ul>, CTA mailto).`;
+    const user = `Oblast: ${area}\nUrgence: ${urgency}\nVelikost firmy: ${size}\nPopis: ${desc}`;
 
     const model = process.env.OOB_MODEL || 'gpt-4o-mini';
 
@@ -35,17 +31,21 @@ Popis (anonymně): ${desc}
       },
       body: JSON.stringify({
         model,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user }
-        ],
+        messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
         temperature: 0.4,
         max_tokens: 600
       })
     });
 
+    // 2) lepší chybové hlášení
     if (!r.ok) {
-      return res.status(200).json({ ok: true, advice: fallbackText(area) });
+      const detail = await r.text();
+      return res.status(200).json({
+        ok: false,
+        error: `OPENAI_${r.status}`,
+        detail: detail?.slice(0, 500),
+        advice: fallbackText()
+      });
     }
 
     const data = await r.json();
@@ -54,7 +54,7 @@ Popis (anonymně): ${desc}
 
     return res.status(200).json({ ok: true, adviceHtml });
   } catch (e) {
-    return res.status(200).json({ ok: true, advice: fallbackText('Diagnostika') });
+    return res.status(200).json({ ok: false, error: 'ENDPOINT_EXCEPTION', advice: fallbackText() });
   }
 }
 
@@ -66,18 +66,8 @@ function sanitizeHtml(s) {
 }
 
 function fallbackHtml(area) {
-  return `<h4>Doporučení</h4>
-<ul>
-  <li>Krátký diagnostický rozhovor (30 min).</li>
-  <li>Vyberte 1 pilotní téma na 2–4 týdny.</li>
-  <li>Průběžná zpětná vazba a stabilizace.</li>
-</ul>
-<div class="oobpa-cta">
-  <a class="primary" href="mailto:info@outofthebox.cz?subject=Konzultace%20–%20${encodeURIComponent(area || 'Diagnostika')}">Domluvit konzultaci</a>
-  <a href="#jak-pomahame">Zjistit víc</a>
-</div>`;
+  return `<h4>Doporučení</h4><ul><li>Krátký diagnostický rozhovor (30 min).</li><li>Vyberte 1 pilotní téma na 2–4 týdny.</li><li>Průběžná zpětná vazba a stabilizace.</li></ul><div class="oobpa-cta"><a class="primary" href="mailto:info@outofthebox.cz?subject=Konzultace%20–%20${encodeURIComponent(area || 'Diagnostika')}">Domluvit konzultaci</a><a href="#jak-pomahame">Zjistit víc</a></div>`;
 }
-
 function fallbackText() {
   return 'Zahajte krátkou diagnostiku (30 min), vyberte 1 pilotní téma a nastavte zpětnou vazbu.';
 }
