@@ -143,3 +143,4 @@ function fallbackHtml(area) {
 function fallbackText() {
   return 'Zahajte krátkou diagnostiku (30 min), vyberte 1 pilotní téma a nastavte zpětnou vazbu.';
 }
+Full update of ootb-advice.js
