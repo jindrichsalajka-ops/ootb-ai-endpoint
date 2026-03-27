@@ -22,43 +22,98 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   try {
-    const { area, urgency, size, description } = req.body || {};
+    const { area, urgency, size, description, lang, language, response_language, instruction } = req.body || {};
     const desc = String(description || '').slice(0, 2000);
+    const requestedLang = String(lang || language || response_language || '').toLowerCase();
+const isEnglish = requestedLang.startsWith('en') || requestedLang.includes('english');
+
+const labels = isEnglish ? {
+  companyContext: 'family-owned and privately held companies, especially manufacturing businesses',
+  answerLanguage: 'Answer in English, specifically and actionably, in bullet points (max 6 steps), focused on steps deployable within 30–60 days.',
+  consider: 'Consider: owner–management relationship, company culture, communication and trust, planning, capacity bottlenecks, and leadership.',
+  dontAsk: 'Do not request personal data, do not provide legal/accounting advice, and do not change the topic of the request.',
+  output: 'Return the output as clean HTML for embedding on a website:',
+  cta: 'At the end, always add a CTA block with the email info@outofthebox.cz and a subject line based on the problem area.',
+  context: 'CONTEXT',
+  area: 'Area',
+  urgency: 'Urgency',
+  size: 'Company size',
+  desc: 'Problem description (anonymous, no PII)',
+  task: 'TASK',
+  task1: 'Name the core problem in <h4>.',
+  task2: 'Add 4–6 practical steps (<li>…</li>) for diagnosis → pilot → stabilization.',
+  task3: 'Where relevant, consider plan vs. actuals, capacity, and bottlenecks.',
+  task4: 'Finish with a CTA block "Schedule a consultation" (mailto: info@outofthebox.cz; subject = "Consultation – ' ,
+  fallbackTitle: 'Recommendation',
+  fallback1: 'Start with a short diagnostic call (30 min).',
+  fallback2: 'Select one pilot topic for 2–4 weeks.',
+  fallback3: 'Use ongoing feedback and stabilization.',
+  fallbackBtn1: 'Schedule a consultation',
+  fallbackBtn2: 'Learn more',
+  fallbackText: 'Start with a short diagnosis (30 min), choose one pilot topic, and set up a feedback loop.',
+  fallbackArea: 'Diagnostics'
+} : {
+  companyContext: 'rodinným a privátním (zejm. výrobním) firmám',
+  answerLanguage: 'Odpovídej česky, konkrétně a akčně v bodech (max 6 kroků), zaměř se na kroky nasaditelné do 30–60 dní.',
+  consider: 'Zohledňuj: vztah vlastník–management, firemní kulturu, komunikaci a důvěru, plánování, kapacitní úzká hrdla, leadership.',
+  dontAsk: 'Nevyžaduj osobní údaje, nedávej právní/účetní rady, neměň téma dotazu.',
+  output: 'Výstup vrať jako čisté HTML pro vložení do webu:',
+  cta: 'V závěru vždy přidej CTA blok s e-mailem info@outofthebox.cz a předmětem podle oblasti problému.',
+  context: 'KONTEKST',
+  area: 'Oblast',
+  urgency: 'Urgence',
+  size: 'Velikost firmy',
+  desc: 'Popis problému (anonymně, bez PII)',
+  task: 'ÚKOL',
+  task1: 'Pojmenuj v <h4> hlavní jádro problému.',
+  task2: 'Přidej 5–8 praktických kroků (<li>…</li>) pro diagnostiku → pilot → stabilizaci.',
+  task3: 'Pokud dává smysl, zohledni plán vs. skutečnost, kapacitu a úzká hrdla.',
+  task4: 'Zakonči CTA blokem „Domluvit konzultaci“ (mailto: info@outofthebox.cz; předmět = „Konzultace – ',
+  fallbackTitle: 'Doporučení',
+  fallback1: 'Krátký diagnostický rozhovor (30 min).',
+  fallback2: 'Vyberte 1 pilotní téma na 2–4 týdny.',
+  fallback3: 'Průběžná zpětná vazba a stabilizace.',
+  fallbackBtn1: 'Domluvit konzultaci',
+  fallbackBtn2: 'Zjistit víc',
+  fallbackText: 'Zahajte krátkou diagnostiku (30 min), vyberte 1 pilotní téma a nastavte zpětnou vazbu.',
+  fallbackArea: 'Diagnostika'
+};
 
     // 1) Klíč k OpenAI
     if (!process.env.OPENAI_API_KEY) {
       return res.status(200).json({
         ok: false,
         error: 'MISSING_OPENAI_KEY',
-        advice: fallbackText()
+        advice: fallbackText(isEnglish)
       });
     }
 
-    // 2) Prompty – neutrální (rodinné/privátní firmy, výroba obecně; žádné obuvnictví)
+    // 2) Prompty – neutrální (rodinné/privátní firmy, výroba obecně)
     const system = `
-Jsi seniorní konzultant společnosti Out of the Box, která pomáhá rodinným a privátním (zejm. výrobním) firmám.
-Odpovídej česky, konkrétně a akčně v bodech (max 6 kroků), zaměř se na kroky nasaditelné do 30–60 dní.
-Zohledňuj: vztah vlastník–management, firemní kulturu, komunikaci a důvěru, plánování, kapacitní úzká hrdla, leadership.
-Nevyžaduj osobní údaje, nedávej právní/účetní rady, neměň téma dotazu.
-Výstup vrať jako čisté HTML pro vložení do webu:
+Jsi seniorní konzultant společnosti Out of the Box, která pomáhá ${labels.companyContext}.
+${labels.answerLanguage}
+${labels.consider}
+${labels.dontAsk}
+${labels.output}
 <h4>…</h4>
 <ul><li>…</li></ul>
 <div class="oobpa-cta">…</div>
-V závěru vždy přidej CTA blok s e-mailem info@outofthebox.cz a předmětem podle oblasti problému.
+${labels.cta}
+${instruction ? `Additional instruction: ${instruction}` : ''}
 `.trim();
 
-    const user = `
-KONTEKST:
-- Oblast: ${area}
-- Urgence: ${urgency}
-- Velikost firmy: ${size}
-- Popis problému (anonymně, bez PII): ${desc}
+const user = `
+${labels.context}:
+- ${labels.area}: ${area}
+- ${labels.urgency}: ${urgency}
+- ${labels.size}: ${size}
+- ${labels.desc}: ${desc}
 
-ÚKOL:
-1) Pojmenuj v <h4> hlavní jádro problému.
-2) Přidej 4–6 praktických kroků (<li>…</li>) pro diagnostiku → pilot → stabilizaci.
-3) Pokud dává smysl, zohledni plán vs. skutečnost, kapacitu a úzká hrdla.
-4) Zakonči CTA blokem „Domluvit konzultaci“ (mailto: info@outofthebox.cz; předmět = „Konzultace – ${area || 'Diagnostika'}“).
+${labels.task}:
+1) ${labels.task1}
+2) ${labels.task2}
+3) ${labels.task3}
+4) ${labels.task4}${area || labels.fallbackArea}”).
 `.trim();
 
     // 3) Volání OpenAI
@@ -89,14 +144,14 @@ KONTEKST:
         error: `OPENAI_${r.status}`,
         detail: (detail || '').slice(0, 500),
         aiUnavailable: is429 ? true : false,
-        advice: fallbackText()
+        advice: fallbackText(isEnglish)
       });
     }
 
     // 5) Úspěch – vyčisti HTML a vrať
     const data = await r.json();
     const text = data?.choices?.[0]?.message?.content?.trim() || '';
-    const adviceHtml = sanitizeHtml(text) || fallbackHtml(area);
+    const adviceHtml = sanitizeHtml(text) || fallbackHtml(area, isEnglish);
 
     return res.status(200).json({ ok: true, adviceHtml });
 
@@ -104,7 +159,7 @@ KONTEKST:
     return res.status(200).json({
       ok: false,
       error: 'ENDPOINT_EXCEPTION',
-      advice: fallbackText()
+      advice: fallbackText(isEnglish)
     });
   }
 }
@@ -127,20 +182,39 @@ function sanitizeHtml(s) {
     .replace(/javascript:/gi, '');
 }
 
-function fallbackHtml(area) {
-  return `<h4>Doporučení</h4>
+function fallbackHtml(area, isEnglish = false) {
+  const t = isEnglish ? {
+    title: 'Recommendation',
+    l1: 'Start with a short diagnostic call (30 min).',
+    l2: 'Select one pilot topic for 2–4 weeks.',
+    l3: 'Use ongoing feedback and stabilization.',
+    btn1: 'Schedule a consultation',
+    btn2: 'Learn more',
+    area: 'Diagnostics'
+  } : {
+    title: 'Doporučení',
+    l1: 'Krátký diagnostický rozhovor (30 min).',
+    l2: 'Vyberte 1 pilotní téma na 2–4 týdny.',
+    l3: 'Průběžná zpětná vazba a stabilizace.',
+    btn1: 'Domluvit konzultaci',
+    btn2: 'Zjistit víc',
+    area: 'Diagnostika'
+  };
+
+  return `<h4>${t.title}</h4>
 <ul>
-  <li>Krátký diagnostický rozhovor (30 min).</li>
-  <li>Vyberte 1 pilotní téma na 2–4 týdny.</li>
-  <li>Průběžná zpětná vazba a stabilizace.</li>
+  <li>${t.l1}</li>
+  <li>${t.l2}</li>
+  <li>${t.l3}</li>
 </ul>
 <div class="oobpa-cta">
-  <a class="primary" href="mailto:info@outofthebox.cz?subject=Konzultace%20–%20${encodeURIComponent(area || 'Diagnostika')}">Domluvit konzultaci</a>
-  <a href="#jak-pomahame">Zjistit víc</a>
+  <a class="primary" href="mailto:info@outofthebox.cz?subject=${encodeURIComponent((isEnglish ? 'Consultation' : 'Konzultace') + ' – ' + (area || t.area))}">${t.btn1}</a>
+  <a href="#jak-pomahame">${t.btn2}</a>
 </div>`;
 }
 
-function fallbackText() {
-  return 'Zahajte krátkou diagnostiku (30 min), vyberte 1 pilotní téma a nastavte zpětnou vazbu.';
+function fallbackText(isEnglish = false) {
+  return isEnglish
+    ? 'Start with a short diagnosis (30 min), choose one pilot topic, and set up a feedback loop.'
+    : 'Zahajte krátkou diagnostiku (30 min), vyberte 1 pilotní téma a nastavte zpětnou vazbu.';
 }
-
